@@ -14,11 +14,17 @@ import threading
 import time
 from datetime import datetime, timedelta
 from config.config import get_collection
+import os
 
-# Koneksi ke MongoDB via config
+# ✅ Setup NLTK for Streamlit Cloud
+nltk_data_path = os.path.join(os.getcwd(), 'nltk_data')
+nltk.download('stopwords', download_dir=nltk_data_path, quiet=True)
+nltk.data.path.append(nltk_data_path)
+
+# ✅ MongoDB connection via config
 collection = get_collection("tari_article")
 
-# ✅ Fungsi scheduler: update source untuk artikel kemarin
+# ✅ Scheduler: update source for previous day
 def fetch_previous_day_data():
     target_date = datetime.now() - timedelta(days=1)
     start = datetime(target_date.year, target_date.month, target_date.day)
@@ -42,7 +48,7 @@ def fetch_previous_day_data():
     )
     print(f"[{datetime.now()}] Update selesai untuk artikel tanggal {start.date()}")
 
-# ✅ Fungsi background scheduler
+# ✅ Run scheduler in background
 def daily_scheduler(task):
     def scheduler():
         while True:
@@ -55,10 +61,9 @@ def daily_scheduler(task):
     thread = threading.Thread(target=scheduler, daemon=True)
     thread.start()
 
-# ✅ Mulai scheduler
 daily_scheduler(fetch_previous_day_data)
 
-# 🔄 Update source (fallback jika belum pernah diset)
+# ✅ Manual fallback update
 collection.update_many(
     {"url": {"$regex": "detik\\.com"}, "source": {"$exists": False}},
     {"$set": {"source": "detik"}}
@@ -68,34 +73,30 @@ collection.update_many(
     {"$set": {"source": "kompas"}}
 )
 
-# Ambil data
+# ✅ Load and prepare data
 articles = collection.find()
 df = pd.DataFrame(list(articles))
-
-# Pastikan kolom 'source' ada
 df['source'] = df['source'].fillna('kompas')
-
-# Filter sumber yang diperbolehkan
 allowed_sources = ['kompas-tv', 'detik']
 df = df[df['source'].isin(allowed_sources)]
 
-# Sidebar
+# ✅ Sidebar filter
 st.sidebar.header("Filter")
 available_sources = df['source'].dropna().unique().tolist()
 selected_sources = st.sidebar.multiselect("Pilih Sumber Artikel", available_sources, default=available_sources)
 if not selected_sources:
     selected_sources = ['kompas-tv', 'detik']
-
 df = df[df['source'].isin(selected_sources)]
-# Judul
+
+# ✅ Title
 st.title('Visualisasi Data Artikel Tari Tradisional')
 
-# Pra-pemrosesan tanggal
+# ✅ Date processing
 df['date'] = pd.to_datetime(df['date'], errors='coerce')
 df['month'] = df['date'].dt.month
 df['year'] = df['date'].dt.year
 
-# 1. Jumlah Artikel per Bulan
+# ✅ 1. Jumlah Artikel per Bulan
 st.subheader("1. Jumlah Artikel per Bulan")
 article_per_month = df.groupby('month').size()
 article_per_month.index = article_per_month.index.map(lambda x: calendar.month_name[int(x)])
@@ -109,10 +110,8 @@ ax1.set_xlabel('Bulan')
 ax1.set_ylabel('Jumlah Artikel')
 st.pyplot(fig1)
 
-# 2. WordCloud
+# ✅ 2. WordCloud
 st.subheader("2. WordCloud Kata-Kata yang Sering Muncul dalam Artikel")
-
-nltk.download('stopwords')
 stop_words = set(stopwords.words('indonesian'))
 
 if 'title' in df.columns or 'content' in df.columns:
@@ -131,7 +130,7 @@ if 'title' in df.columns or 'content' in df.columns:
 else:
     st.warning("Kolom 'title' dan 'content' tidak tersedia.")
 
-# 3. Jenis Tari Populer
+# ✅ 3. Jenis Tari Populer
 st.subheader("3. Jenis Tari Paling Sering Disebut")
 
 if 'title' in df.columns or 'content' in df.columns:
